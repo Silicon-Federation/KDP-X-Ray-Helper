@@ -1,0 +1,10 @@
+{
+  "ext_name": {
+    "message": "KDP X-Ray Helper",
+    "description": "Extension name shown in Chrome"
+  },
+  "ext_description": {
+    "message": "AI-powered batch editor for KDP X-Ray entities — extract, compare, and auto-update characters and terms.",
+    "description": "Extension description shown in Chrome Web Store"
+  }
+}

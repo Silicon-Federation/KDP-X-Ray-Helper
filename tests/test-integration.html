@@ -1,0 +1,801 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KDP X-Ray Helper — Integration Tests (DOM Operations)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'SF Mono', Monaco, 'Consolas', monospace; font-size: 13px; background: #1e1e1e; color: #d4d4d4; }
+    .controls { padding: 15px 20px; border-bottom: 1px solid #333; display: flex; gap: 10px; align-items: center; }
+    h1 { color: #ff9900; font-size: 16px; }
+    h2 { color: #569cd6; font-size: 14px; margin: 12px 0 6px; }
+    button { padding: 6px 14px; background: #ff9900; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    button:hover { background: #e88b00; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    .layout { display: flex; height: calc(100vh - 50px); }
+    .test-panel { width: 50%; overflow-y: auto; padding: 15px 20px; border-right: 1px solid #333; }
+    .mock-frame { width: 50%; }
+    .mock-frame iframe { width: 100%; height: 100%; border: none; }
+    .suite { margin-bottom: 15px; padding: 8px; border: 1px solid #333; border-radius: 6px; }
+    .test { padding: 3px 0; display: flex; gap: 8px; align-items: flex-start; }
+    .test .icon { width: 16px; text-align: center; flex-shrink: 0; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .warn { color: #dcdcaa; }
+    .error-detail { color: #f44747; font-size: 11px; margin-left: 24px; padding: 2px 0; }
+    .summary { margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: bold; }
+    .summary.all-pass { background: #1e3a1e; color: #4ec9b0; border: 1px solid #4ec9b0; }
+    .summary.has-fail { background: #3a1e1e; color: #f44747; border: 1px solid #f44747; }
+    .info { color: #569cd6; font-size: 11px; margin: 5px 0; }
+  </style>
+</head>
+<body>
+
+<div class="controls">
+  <h1>Integration Tests — DOM Operations</h1>
+  <button id="btn-run" onclick="runAllIntegrationTests()">Run All Tests</button>
+  <span class="info" id="status-info">Waiting for mock page to load...</span>
+</div>
+
+<div class="layout">
+  <div class="test-panel" id="output"></div>
+  <div class="mock-frame">
+    <iframe id="mock-iframe" src="mock-kdp-page.html"></iframe>
+  </div>
+</div>
+
+<!-- Load shared modules (same as content scripts) -->
+<script src="../shared/constants.js"></script>
+<script src="../shared/diff-engine.js"></script>
+
+<script>
+  // ========== TEST FRAMEWORK (async-aware) ==========
+
+  const results = { total: 0, passed: 0, failed: 0, errors: [] };
+  let currentSuite = '';
+  let mockDoc = null;    // iframe's document
+  let mockWin = null;    // iframe's window
+
+  const outputEl = () => document.getElementById('output');
+
+  function suite(name) {
+    currentSuite = name;
+    const div = document.createElement('div');
+    div.className = 'suite';
+    div.id = 'suite-' + name.replace(/\s/g, '-');
+    const h = document.createElement('h2');
+    h.textContent = name;
+    div.appendChild(h);
+    outputEl().appendChild(div);
+  }
+
+  async function test(name, fn) {
+    results.total++;
+    const suiteEl = document.querySelector(`#suite-${currentSuite.replace(/\s/g, '-')}`);
+    const div = document.createElement('div');
+    div.className = 'test';
+
+    try {
+      await fn();
+      results.passed++;
+      div.innerHTML = `<span class="icon pass">✓</span><span class="pass">${name}</span>`;
+    } catch (err) {
+      results.failed++;
+      results.errors.push({ suite: currentSuite, test: name, error: err.message });
+      div.innerHTML = `<span class="icon fail">✗</span><span class="fail">${name}</span>`;
+      const detail = document.createElement('div');
+      detail.className = 'error-detail';
+      detail.textContent = err.message;
+      suiteEl.appendChild(div);
+      suiteEl.appendChild(detail);
+      return;
+    }
+    suiteEl.appendChild(div);
+  }
+
+  function assert(condition, msg) {
+    if (!condition) throw new Error(msg || 'Assertion failed');
+  }
+
+  function assertEqual(actual, expected, msg) {
+    if (actual !== expected) {
+      throw new Error(`${msg || 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+  }
+
+  function showSummary() {
+    const div = document.createElement('div');
+    div.className = `summary ${results.failed === 0 ? 'all-pass' : 'has-fail'}`;
+    div.textContent = `${results.passed}/${results.total} tests passed` +
+      (results.failed > 0 ? ` — ${results.failed} FAILED` : ' — ALL PASS ✓');
+    outputEl().appendChild(div);
+
+    if (results.errors.length > 0) {
+      const errDiv = document.createElement('div');
+      errDiv.style.marginTop = '10px';
+      errDiv.style.fontSize = '12px';
+      errDiv.style.color = '#f44747';
+      errDiv.innerHTML = '<strong>Failed tests:</strong><br>' +
+        results.errors.map(e => `  [${e.suite}] ${e.test}: ${e.error}`).join('<br>');
+      outputEl().appendChild(errDiv);
+    }
+  }
+
+  // ========== HELPERS ==========
+
+  function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  /**
+   * Create DomReader/DomWriter-like functions that operate on the iframe's document
+   * instead of the host page's document.
+   */
+  function createMockDomReader() {
+    return {
+      getAllEntities() {
+        const entities = mockDoc.querySelectorAll(XRAY.SEL.ENTITY_ITEM);
+        return Array.from(entities).map(el => {
+          const name = el.querySelector(XRAY.SEL.ENTITY_NAME)?.textContent?.trim() || '';
+          const status = el.querySelector(XRAY.SEL.ENTITY_STATUS)?.textContent?.trim() || '';
+          const index = parseInt(el.getAttribute('data-index'));
+          return { name, status, index, element: el };
+        });
+      },
+
+      getCurrentEntityName() {
+        return mockDoc.querySelector(XRAY.SEL.DETAIL_LABEL)?.textContent?.trim() || '';
+      },
+
+      readCurrentEntityDetails() {
+        const name = this.getCurrentEntityName();
+        if (!name) return null;
+
+        const charRadio = mockDoc.querySelector(XRAY.SEL.DETAIL_TYPE_CHAR);
+        const topicRadio = mockDoc.querySelector(XRAY.SEL.DETAIL_TYPE_TOPIC);
+        let type = XRAY.TYPE.CHARACTER;
+        if (topicRadio && topicRadio.checked) type = XRAY.TYPE.TERM;
+
+        const includeRadio = mockDoc.querySelector(XRAY.SEL.DETAIL_INCLUDE);
+        const included = includeRadio ? includeRadio.checked : true;
+
+        const descEl = mockDoc.querySelector(XRAY.SEL.DESC_TEXT);
+        const commentEl = mockDoc.querySelector(XRAY.SEL.COMMENTARY_TEXT);
+        const description = descEl?.textContent?.trim() || '';
+        const commentary = commentEl?.textContent?.trim() || '';
+
+        const doneSwitch = mockDoc.querySelector(XRAY.SEL.DONE_SWITCH);
+        const reviewed = doneSwitch ? doneSwitch.checked : false;
+
+        const aliasEls = mockDoc.querySelectorAll(XRAY.SEL.ALIAS_LIST);
+        const aliases = Array.from(aliasEls).map(el => el.textContent?.trim()).filter(Boolean);
+
+        return { name, type, included, description, commentary, reviewed, aliases };
+      },
+
+      isPageReady() {
+        return mockDoc.querySelectorAll(XRAY.SEL.ENTITY_ITEM).length > 0;
+      },
+
+      exportEntitiesQuick() {
+        return this.getAllEntities().map(e => ({
+          name: e.name, status: e.status, dataIndex: e.index,
+        }));
+      },
+    };
+  }
+
+  function createMockDomWriter(reader) {
+    function simulateClick(el) {
+      if (!el) return;
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }
+
+    function triggerInputEvent(el) {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    return {
+      async selectEntityByIndex(dataIndex) {
+        const entity = mockDoc.querySelector(`${XRAY.SEL.ENTITY_ITEM}[data-index="${dataIndex}"]`);
+        if (!entity) throw new Error(`Entity with index ${dataIndex} not found`);
+        simulateClick(entity);
+        await sleep(50); // shortened delays for testing
+        return reader.getCurrentEntityName();
+      },
+
+      async selectEntityByName(name) {
+        const entities = reader.getAllEntities();
+        const match = entities.find(e => e.name.toLowerCase() === name.toLowerCase());
+        if (!match) throw new Error(`Entity "${name}" not found in sidebar`);
+        return this.selectEntityByIndex(match.index);
+      },
+
+      async setEntityType(type) {
+        const radioSelector = type === XRAY.TYPE.CHARACTER
+          ? XRAY.SEL.DETAIL_TYPE_CHAR
+          : XRAY.SEL.DETAIL_TYPE_TOPIC;
+        const radio = mockDoc.querySelector(radioSelector);
+        if (!radio) throw new Error(`Radio for type ${type} not found`);
+        if (!radio.checked) {
+          const wrapper = radio.closest(XRAY.SEL.RADIO_WRAPPER) || radio.parentElement;
+          simulateClick(wrapper);
+          // Also set the radio directly for mock page compatibility
+          radio.checked = true;
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(30);
+        }
+      },
+
+      async setIncludeExclude(include) {
+        const selector = include ? XRAY.SEL.DETAIL_INCLUDE : XRAY.SEL.DETAIL_EXCLUDE;
+        const radio = mockDoc.querySelector(selector);
+        if (!radio) return;
+        if (!radio.checked) {
+          radio.checked = true;
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(30);
+        }
+      },
+
+      async setDescription(description, commentary) {
+        const addDescBtn = mockDoc.querySelector(XRAY.SEL.DESC_ADD_BTN);
+        if (!addDescBtn) throw new Error('Add description button not found');
+        simulateClick(addDescBtn);
+        await sleep(50);
+
+        const textareas = mockDoc.querySelector(XRAY.SEL.DESC_MODAL_BODY)?.querySelectorAll('textarea');
+        if (!textareas || textareas.length < 2) throw new Error('Description textareas not found');
+
+        textareas[0].value = description;
+        triggerInputEvent(textareas[0]);
+
+        if (commentary) {
+          textareas[1].value = commentary;
+          triggerInputEvent(textareas[1]);
+        }
+
+        await sleep(30);
+
+        const submitBtn = mockDoc.querySelector(XRAY.SEL.DESC_SUBMIT);
+        if (submitBtn) simulateClick(submitBtn);
+        await sleep(50);
+      },
+
+      async setItemReviewed(reviewed) {
+        const doneSwitch = mockDoc.querySelector(XRAY.SEL.DONE_SWITCH);
+        if (!doneSwitch) return;
+        if (doneSwitch.checked !== reviewed) {
+          doneSwitch.checked = reviewed;
+          doneSwitch.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(30);
+        }
+      },
+    };
+  }
+
+  // ========== RESET MOCK PAGE ==========
+
+  function resetMockPage() {
+    return new Promise((resolve) => {
+      const iframe = document.getElementById('mock-iframe');
+      iframe.onload = () => {
+        mockWin = iframe.contentWindow;
+        mockDoc = iframe.contentDocument;
+        setTimeout(resolve, 100);
+      };
+      iframe.src = iframe.src; // reload
+    });
+  }
+
+  // ========== TEST SUITES ==========
+
+  async function runAllIntegrationTests() {
+    const btn = document.getElementById('btn-run');
+    btn.disabled = true;
+    document.getElementById('status-info').textContent = 'Running tests...';
+    results.total = 0; results.passed = 0; results.failed = 0; results.errors = [];
+    outputEl().innerHTML = '';
+
+    // Ensure iframe is loaded
+    const iframe = document.getElementById('mock-iframe');
+    mockWin = iframe.contentWindow;
+    mockDoc = iframe.contentDocument;
+
+    if (!mockDoc || !mockDoc.querySelector('.entity.well')) {
+      await new Promise(r => { iframe.onload = () => setTimeout(r, 200); });
+      mockWin = iframe.contentWindow;
+      mockDoc = iframe.contentDocument;
+    }
+
+    await testDomReaderBasics();
+    await testDomReaderDetails();
+    await testEntityNavigation();
+    await testTypeChanges();
+    await testIncludeExclude();
+    await testDescriptionDialog();
+    await testReviewToggle();
+    await testBatchWorkflow();
+    await testDiffIntegration();
+    await testSelectorCompatibility();
+
+    showSummary();
+    btn.disabled = false;
+    document.getElementById('status-info').textContent = 'Done!';
+  }
+
+  // ---- DomReader Basics ----
+  async function testDomReaderBasics() {
+    suite('DomReader — Entity List');
+    const reader = createMockDomReader();
+
+    await test('isPageReady returns true', () => {
+      assert(reader.isPageReady(), 'Page should be ready');
+    });
+
+    await test('getAllEntities returns 8 entities', () => {
+      const entities = reader.getAllEntities();
+      assertEqual(entities.length, 8, 'Entity count');
+    });
+
+    await test('First entity is Kyle Chen', () => {
+      const entities = reader.getAllEntities();
+      assertEqual(entities[0].name, 'Kyle Chen');
+    });
+
+    await test('Entity names match mock data', () => {
+      const entities = reader.getAllEntities();
+      const expected = ['Kyle Chen', 'Sarah Lin', 'The Shadow King', 'Professor Zhang',
+                        'Nexus Portal', 'Shadowlands', 'Crystal Sword', 'Minor Character Bob'];
+      expected.forEach((name, i) => {
+        assertEqual(entities[i].name, name, `Entity ${i}`);
+      });
+    });
+
+    await test('Entity indices are sequential', () => {
+      const entities = reader.getAllEntities();
+      entities.forEach((e, i) => {
+        assertEqual(e.index, i, `Index of entity ${i}`);
+      });
+    });
+
+    await test('exportEntitiesQuick returns correct structure', () => {
+      const quick = reader.exportEntitiesQuick();
+      assertEqual(quick.length, 8);
+      assert(quick[0].name === 'Kyle Chen');
+      assert(typeof quick[0].dataIndex === 'number');
+      assert(typeof quick[0].status === 'string');
+    });
+
+    await test('Status values are present', () => {
+      const entities = reader.getAllEntities();
+      assert(entities[0].status.length > 0, 'Should have status text');
+      assert(entities[0].status === 'Needs Review' || entities[0].status === 'Approved');
+    });
+  }
+
+  // ---- DomReader Details ----
+  async function testDomReaderDetails() {
+    suite('DomReader — Entity Details');
+    const reader = createMockDomReader();
+
+    await test('getCurrentEntityName returns first entity (default)', () => {
+      const name = reader.getCurrentEntityName();
+      assertEqual(name, 'Kyle Chen');
+    });
+
+    await test('readCurrentEntityDetails returns full data', () => {
+      const details = reader.readCurrentEntityDetails();
+      assert(details !== null, 'Should return details');
+      assertEqual(details.name, 'Kyle Chen');
+      assertEqual(details.type, 'CHARACTER');
+      assert(typeof details.included === 'boolean');
+      assert(typeof details.description === 'string');
+      assert(typeof details.reviewed === 'boolean');
+    });
+
+    await test('Kyle Chen has description', () => {
+      const details = reader.readCurrentEntityDetails();
+      assert(details.description.length > 0, 'Kyle should have a description');
+    });
+
+    await test('Kyle Chen has aliases', () => {
+      const details = reader.readCurrentEntityDetails();
+      assert(details.aliases.length > 0, 'Kyle should have aliases: ' + JSON.stringify(details.aliases));
+    });
+  }
+
+  // ---- Entity Navigation ----
+  async function testEntityNavigation() {
+    await resetMockPage();
+    suite('DomWriter — Entity Navigation');
+    const reader = createMockDomReader();
+    const writer = createMockDomWriter(reader);
+
+    await test('Select entity by index (index 2 = The Shadow King)', async () => {
+      const name = await writer.selectEntityByIndex(2);
+      assertEqual(name, 'The Shadow King');
+    });
+
+    await test('Select entity by name (Sarah Lin)', async () => {
+      const name = await writer.selectEntityByName('Sarah Lin');
+      assertEqual(name, 'Sarah Lin');
+    });
+
+    await test('Select entity by name case-insensitive', async () => {
+      const name = await writer.selectEntityByName('nexus portal');
+      assertEqual(name, 'Nexus Portal');
+    });
+
+    await test('Select nonexistent entity throws', async () => {
+      let threw = false;
+      try {
+        await writer.selectEntityByName('Nonexistent Character');
+      } catch (e) {
+        threw = true;
+        assert(e.message.includes('not found'), 'Error message: ' + e.message);
+      }
+      assert(threw, 'Should have thrown');
+    });
+
+    await test('Navigate to entity and read details', async () => {
+      await writer.selectEntityByName('Shadowlands');
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.name, 'Shadowlands');
+      assert(details.description.includes('parallel dimension') || details.description.includes('dark'),
+        'Desc: ' + details.description);
+    });
+
+    await test('Navigate between multiple entities', async () => {
+      await writer.selectEntityByIndex(0);
+      assertEqual(reader.getCurrentEntityName(), 'Kyle Chen');
+
+      await writer.selectEntityByIndex(7);
+      assertEqual(reader.getCurrentEntityName(), 'Minor Character Bob');
+
+      await writer.selectEntityByIndex(4);
+      assertEqual(reader.getCurrentEntityName(), 'Nexus Portal');
+    });
+  }
+
+  // ---- Type Changes ----
+  async function testTypeChanges() {
+    await resetMockPage();
+    suite('DomWriter — Type Changes');
+    const reader = createMockDomReader();
+    const writer = createMockDomWriter(reader);
+
+    await test('Kyle Chen is initially CHARACTER', async () => {
+      await writer.selectEntityByIndex(0);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.type, 'CHARACTER');
+    });
+
+    await test('Change Kyle to TERM', async () => {
+      await writer.selectEntityByIndex(0);
+      await writer.setEntityType(XRAY.TYPE.TERM);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.type, 'TERM', 'Type after change');
+    });
+
+    await test('Nexus Portal is initially TERM (TOPIC)', async () => {
+      await writer.selectEntityByIndex(4);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.type, 'TERM', 'Nexus should be TERM/TOPIC');
+    });
+
+    await test('Change Nexus Portal to CHARACTER', async () => {
+      await writer.selectEntityByIndex(4);
+      await writer.setEntityType(XRAY.TYPE.CHARACTER);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.type, 'CHARACTER');
+    });
+  }
+
+  // ---- Include/Exclude ----
+  async function testIncludeExclude() {
+    await resetMockPage();
+    suite('DomWriter — Include/Exclude');
+    const reader = createMockDomReader();
+    const writer = createMockDomWriter(reader);
+
+    await test('Kyle Chen is initially included', async () => {
+      await writer.selectEntityByIndex(0);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.included, true);
+    });
+
+    await test('Set exclude on Kyle', async () => {
+      await writer.selectEntityByIndex(0);
+      await writer.setIncludeExclude(false);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.included, false, 'Should be excluded');
+    });
+
+    await test('Set include back', async () => {
+      await writer.selectEntityByIndex(0);
+      await writer.setIncludeExclude(true);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.included, true, 'Should be included');
+    });
+  }
+
+  // ---- Description Dialog ----
+  async function testDescriptionDialog() {
+    await resetMockPage();
+    suite('DomWriter — Description Dialog');
+    const reader = createMockDomReader();
+    const writer = createMockDomWriter(reader);
+
+    await test('Set description on Kyle Chen', async () => {
+      await writer.selectEntityByIndex(0);
+      await writer.setDescription('A brave engineer from Shanghai.', 'Test commentary');
+      await sleep(50);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.description, 'A brave engineer from Shanghai.');
+    });
+
+    await test('Set description on Professor Zhang (initially empty)', async () => {
+      await writer.selectEntityByName('Professor Zhang');
+      await writer.setDescription('A wise mentor at the university.', '');
+      await sleep(50);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.description, 'A wise mentor at the university.');
+    });
+
+    await test('Description with special characters', async () => {
+      await writer.selectEntityByIndex(0);
+      const specialDesc = 'Test with "quotes" & <angles> and 中文描述';
+      await writer.setDescription(specialDesc, '');
+      await sleep(50);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.description, specialDesc);
+    });
+
+    await test('Description dialog opens and closes', async () => {
+      await writer.selectEntityByIndex(0);
+      const addBtn = mockDoc.querySelector(XRAY.SEL.DESC_ADD_BTN);
+      assert(addBtn !== null, 'Add description button should exist');
+      addBtn.click();
+      await sleep(50);
+      const dialog = mockDoc.querySelector(XRAY.SEL.DESC_DIALOG);
+      assert(dialog !== null, 'Dialog element should exist');
+      assert(dialog.classList.contains('in') || dialog.style.display === 'block',
+        'Dialog should be visible');
+      // Close it
+      const submitBtn = mockDoc.querySelector(XRAY.SEL.DESC_SUBMIT);
+      submitBtn.click();
+      await sleep(50);
+    });
+  }
+
+  // ---- Review Toggle ----
+  async function testReviewToggle() {
+    await resetMockPage();
+    suite('DomWriter — Review Toggle');
+    const reader = createMockDomReader();
+    const writer = createMockDomWriter(reader);
+
+    await test('Kyle Chen is initially not reviewed', async () => {
+      await writer.selectEntityByIndex(0);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.reviewed, false);
+    });
+
+    await test('Set reviewed to true', async () => {
+      await writer.selectEntityByIndex(0);
+      await writer.setItemReviewed(true);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.reviewed, true);
+    });
+
+    await test('Set reviewed back to false', async () => {
+      await writer.selectEntityByIndex(0);
+      await writer.setItemReviewed(false);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.reviewed, false);
+    });
+
+    await test('The Shadow King is initially reviewed', async () => {
+      await writer.selectEntityByIndex(2);
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.reviewed, true);
+    });
+  }
+
+  // ---- Batch Workflow ----
+  async function testBatchWorkflow() {
+    await resetMockPage();
+    suite('Batch Workflow (simulated)');
+    const reader = createMockDomReader();
+    const writer = createMockDomWriter(reader);
+
+    await test('Process single entity update', async () => {
+      await writer.selectEntityByName('Kyle Chen');
+      await writer.setEntityType(XRAY.TYPE.CHARACTER);
+      await writer.setIncludeExclude(true);
+      await writer.setDescription('Updated by batch test', 'Auto-generated');
+      await writer.setItemReviewed(true);
+      await sleep(50);
+
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.description, 'Updated by batch test');
+      assertEqual(details.reviewed, true);
+    });
+
+    await test('Process delete (exclude) operation', async () => {
+      await writer.selectEntityByName('Minor Character Bob');
+      await writer.setIncludeExclude(false);
+      await writer.setItemReviewed(true);
+      await sleep(30);
+
+      const details = reader.readCurrentEntityDetails();
+      assertEqual(details.included, false);
+      assertEqual(details.reviewed, true);
+    });
+
+    await test('Multi-entity sequential workflow', async () => {
+      const ops = [
+        { name: 'Sarah Lin', type: 'CHARACTER', desc: 'Quantum physicist' },
+        { name: 'Nexus Portal', type: 'TERM', desc: 'Interdimensional gateway' },
+        { name: 'Crystal Sword', type: 'TERM', desc: 'Ancient artifact of power' },
+      ];
+
+      for (const op of ops) {
+        await writer.selectEntityByName(op.name);
+        await writer.setEntityType(op.type === 'TERM' ? XRAY.TYPE.TERM : XRAY.TYPE.CHARACTER);
+        await writer.setDescription(op.desc, '');
+        await writer.setItemReviewed(true);
+        await sleep(30);
+      }
+
+      // Verify all were updated
+      for (const op of ops) {
+        await writer.selectEntityByName(op.name);
+        const details = reader.readCurrentEntityDetails();
+        assertEqual(details.description, op.desc, `${op.name} description`);
+        assertEqual(details.reviewed, true, `${op.name} reviewed`);
+      }
+    });
+
+    await test('Mock data reflects changes', () => {
+      const state = mockWin._getEntityState();
+      const kyle = state.find(e => e.name === 'Kyle Chen');
+      assertEqual(kyle.description, 'Updated by batch test');
+      const bob = state.find(e => e.name === 'Minor Character Bob');
+      assertEqual(bob.included, false);
+    });
+  }
+
+  // ---- Diff + DOM Integration ----
+  async function testDiffIntegration() {
+    await resetMockPage();
+    suite('Diff Engine + DOM Integration');
+    const reader = createMockDomReader();
+
+    await test('Read entities from mock page and generate diff', () => {
+      const kdpEntities = reader.exportEntitiesQuick().map(e => ({
+        name: e.name,
+        type: 'CHARACTER',
+        description: '',
+      }));
+
+      const importedEntities = [
+        { name: 'Kyle Chen', type: 'CHARACTER', description: 'Updated hero', action: 'update' },
+        { name: 'Sarah Lin', type: 'CHARACTER', description: 'Physicist', action: 'update' },
+        { name: 'Minor Character Bob', type: 'CHARACTER', action: 'delete' },
+        { name: 'New Character Alice', type: 'CHARACTER', description: 'New villain', action: 'update' },
+      ];
+
+      const diff = DiffEngine.generateDiff(importedEntities, kdpEntities, { showUnmatched: true });
+
+      assert(Array.isArray(diff), 'Diff should be array');
+      assert(diff.length > 0, 'Diff should have items');
+
+      const kyle = diff.find(d => d.name === 'Kyle Chen');
+      assert(kyle !== null, 'Kyle should be in diff');
+      assertEqual(kyle.source, 'both', 'Kyle source');
+
+      const bob = diff.find(d => d.name === 'Minor Character Bob');
+      assertEqual(bob.action, 'delete', 'Bob should be marked for delete');
+
+      const alice = diff.find(d => d.name === 'New Character Alice');
+      assertEqual(alice.source, 'import_only', 'Alice is import-only');
+
+      const stats = DiffEngine.getDiffStats(diff);
+      assert(stats.total > 0, 'Should have total');
+    });
+
+    await test('Fuzzy match between AI and KDP names', () => {
+      const kdpEntities = [
+        { name: 'The Shadow King', type: 'CHARACTER', aliases: ['Shadow King', 'Dark Lord'] },
+      ];
+
+      // AI might extract slightly different name
+      const result = DiffEngine.findBestMatch(
+        { name: 'Shadow King' },
+        kdpEntities
+      );
+      assert(result !== null, 'Should find Shadow King via alias');
+      assertEqual(result.kdpEntity.name, 'The Shadow King');
+    });
+  }
+
+  // ---- Selector Compatibility ----
+  async function testSelectorCompatibility() {
+    suite('CSS Selector Compatibility');
+
+    await test('ENTITY_ITEM selector works', () => {
+      const els = mockDoc.querySelectorAll(XRAY.SEL.ENTITY_ITEM);
+      assertEqual(els.length, 8);
+    });
+
+    await test('ENTITY_NAME selector works inside entity', () => {
+      const first = mockDoc.querySelector(XRAY.SEL.ENTITY_ITEM);
+      const name = first.querySelector(XRAY.SEL.ENTITY_NAME);
+      assert(name !== null, 'Name element should exist');
+      assertEqual(name.textContent.trim(), 'Kyle Chen');
+    });
+
+    await test('DETAIL_LABEL selector works', () => {
+      const label = mockDoc.querySelector(XRAY.SEL.DETAIL_LABEL);
+      assert(label !== null, 'Detail label should exist');
+    });
+
+    await test('Type radio buttons found', () => {
+      const charRadio = mockDoc.querySelector(XRAY.SEL.DETAIL_TYPE_CHAR);
+      const topicRadio = mockDoc.querySelector(XRAY.SEL.DETAIL_TYPE_TOPIC);
+      assert(charRadio !== null, 'CHARACTER radio');
+      assert(topicRadio !== null, 'TOPIC radio');
+    });
+
+    await test('Include/Exclude radios found', () => {
+      const inc = mockDoc.querySelector(XRAY.SEL.DETAIL_INCLUDE);
+      const exc = mockDoc.querySelector(XRAY.SEL.DETAIL_EXCLUDE);
+      assert(inc !== null, 'Include radio');
+      assert(exc !== null, 'Exclude radio');
+    });
+
+    await test('DESC_ADD_BTN selector works', () => {
+      const btn = mockDoc.querySelector(XRAY.SEL.DESC_ADD_BTN);
+      assert(btn !== null, 'Add description button should be found');
+    });
+
+    await test('DESC_DIALOG selector works', () => {
+      const dialog = mockDoc.querySelector(XRAY.SEL.DESC_DIALOG);
+      assert(dialog !== null, 'Description dialog should exist');
+    });
+
+    await test('DESC_SUBMIT selector works', () => {
+      const btn = mockDoc.querySelector(XRAY.SEL.DESC_SUBMIT);
+      assert(btn !== null, 'Submit button should exist');
+    });
+
+    await test('DONE_SWITCH selector works', () => {
+      const sw = mockDoc.querySelector(XRAY.SEL.DONE_SWITCH);
+      assert(sw !== null, 'Done switch should exist');
+    });
+
+    await test('DESC_TEXT selector works', () => {
+      const el = mockDoc.querySelector(XRAY.SEL.DESC_TEXT);
+      assert(el !== null, 'Description text element');
+    });
+
+    await test('ALIAS_LIST selector works', () => {
+      const els = mockDoc.querySelectorAll(XRAY.SEL.ALIAS_LIST);
+      assert(els.length > 0, 'Should find aliases');
+    });
+  }
+
+  // ========== INIT ==========
+  document.getElementById('mock-iframe').addEventListener('load', () => {
+    const iframe = document.getElementById('mock-iframe');
+    mockWin = iframe.contentWindow;
+    mockDoc = iframe.contentDocument;
+    document.getElementById('status-info').textContent = 'Mock page loaded. Ready to run tests.';
+    document.getElementById('btn-run').disabled = false;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,466 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mock KDP X-Ray Verify Page</title>
+  <style>
+    /* Simulate KDP X-Ray page layout — matches real Amazon KDP DOM structure */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 13px; display: flex; height: 100vh; }
+
+    /* Sidebar: entity list */
+    .sidebar { width: 300px; border-right: 1px solid #ddd; overflow-y: auto; background: #f9f9f9; }
+    .sidebar-header { padding: 10px; background: #232f3e; color: #fff; font-weight: bold; }
+
+    .entity.well {
+      padding: 10px;
+      border-bottom: 1px solid #e0e0e0;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .entity.well:hover { background: #e8e8e8; }
+    .entity.well.selected { background: #fff3cd; border-left: 3px solid #ff9900; }
+    .displayname { font-weight: bold; font-size: 14px; }
+    .entity-status { font-size: 11px; color: #666; margin-top: 2px; }
+
+    /* Main panel: entity details */
+    .main-panel { flex: 1; padding: 20px; overflow-y: auto; }
+    .entityAttributes { max-width: 600px; }
+    .attribute.entityLabel .displayname { font-size: 18px; font-weight: bold; margin-bottom: 15px; display: block; }
+
+    .field-group { margin-bottom: 15px; }
+    .field-label { font-weight: bold; margin-bottom: 5px; display: block; color: #555; }
+
+    /* Radio buttons — matches Amazon AUI .a-declarative wrapper */
+    .a-declarative { display: inline-block; margin-right: 15px; cursor: pointer; padding: 4px 8px; border: 1px solid #ddd; border-radius: 3px; }
+    .a-declarative:hover { background: #f0f0f0; }
+    .a-declarative input[type="radio"] { margin-right: 4px; }
+
+    /* Done switch — matches KDP #doneSwitch structure */
+    #doneSwitch { margin-top: 10px; }
+    .a-switch-label { cursor: pointer; padding: 4px 12px; background: #ddd; border-radius: 12px; font-size: 12px; }
+    .a-switch-label.checked { background: #28a745; color: #fff; }
+
+    /* Description — KDP renders .entityDescription and .entityCommentary via JS */
+    .attribute.entityDescriptions { margin-top: 5px; }
+    .entityDescription { padding: 12px; background: #f8f8f8; border: 1px solid #ddd; border-radius: 3px; margin-top: 10px; font-size: 13px; line-height: 1.6; }
+    .entityCommentary { padding: 12px; background: #fffbe6; border: 1px solid #f0e6c0; border-radius: 3px; margin-top: 8px; font-size: 13px; font-style: italic; }
+
+    /* Aliases — KDP detail panel uses table with tr.alias rows */
+    .a-bordered { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .a-bordered th, .a-bordered td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; }
+    .a-bordered th { background: #f7f7f7; font-weight: 700; font-size: 12px; }
+    .a-bordered .a-align-center { text-align: center; }
+    tr.alias td a { color: #0066c0; text-decoration: none; }
+    .removeButton { cursor: pointer; }
+
+    /* Add description button */
+    [data-action="add-description-action"] {
+      display: inline-block; padding: 6px 12px; background: #ff9900; color: #fff;
+      border: none; border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+
+    /* Modal — matches Bootstrap .modal with .in for visibility */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1000; }
+    .modal-overlay.in { display: flex; align-items: center; justify-content: center; }
+    .modal.descriptionDialog { background: #fff; border-radius: 8px; width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+    .modal.descriptionDialog .modal-header { padding: 12px 16px; border-bottom: 1px solid #ddd; font-weight: bold; }
+    .modal.descriptionDialog .modal-body { padding: 16px; }
+    .modal.descriptionDialog .modal-body textarea { width: 100%; padding: 8px; margin: 4px 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    .modal.descriptionDialog .modal-body label { font-weight: bold; font-size: 12px; }
+
+    /* Submit button — matches KDP .a-button wrapper with disabled state */
+    .a-button { display: inline-block; }
+    .a-button .a-button-input { padding: 8px 16px; background: #ff9900; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    .a-button.a-button-disabled .a-button-input { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status bar */
+    .status-bar { padding: 8px 12px; background: #e6f4ea; color: #1e7e34; font-size: 12px; border-bottom: 1px solid #ddd; }
+
+    /* Remove alias button */
+    [data-action="remove-alias-action"] { cursor: pointer; color: #dc3545; margin-left: 4px; font-size: 10px; }
+  </style>
+</head>
+<body>
+
+  <!-- ========== SIDEBAR: Entity List ========== -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      X-Ray Entities (Mock)
+      <span id="newEntityButton"><a href="#" data-target="#newEntityDialog" data-toggle="modal" class="a-link-normal a-nowrap">Add a new item</a></span>
+    </div>
+    <div class="status-bar">8 entities found</div>
+    <div id="entity-list">
+      <!-- Entities will be generated by JS below -->
+    </div>
+  </div>
+
+  <!-- ========== MAIN PANEL: Entity Details ========== -->
+  <div class="main-panel">
+    <div class="entityAttributes" id="entity-detail">
+      <!-- entityLabel with displayname inside — matches real KDP structure -->
+      <div class="attribute entityLabel">
+        <div class="displayname" id="detail-label">Select an entity</div>
+      </div>
+
+      <div class="field-group">
+        <span class="field-label">Type:</span>
+        <span class="a-declarative" data-action="change-type-action"><input type="radio" name="CHARACTER" id="radio-char" /> Character</span>
+        <span class="a-declarative" data-action="change-type-action"><input type="radio" name="TOPIC" id="radio-topic" /> Topic/Term</span>
+      </div>
+
+      <div class="field-group">
+        <span class="field-label">Visibility:</span>
+        <span class="a-declarative" data-action="change-include-action"><input type="radio" name="include" id="radio-include" checked /> Include</span>
+        <span class="a-declarative" data-action="change-include-action"><input type="radio" name="exclude" id="radio-exclude" /> Exclude</span>
+      </div>
+
+      <!-- Aliases — KDP detail panel uses table with tr.alias rows -->
+      <div class="attribute entityAliases">
+        <div class="field-label">Spellings or usages:</div>
+        <table class="a-bordered a-span9" id="alias-table">
+          <tr><th>Spelling or usage</th><th>Occurrences</th><th>Display name</th><th></th></tr>
+          <!-- Alias rows rendered by JS -->
+        </table>
+      </div>
+
+      <!-- Description display — KDP renders .entityDescription/.entityCommentary via JS -->
+      <div class="attribute entityDescriptions" property="descriptions">
+        <div class="field-label">Description:</div>
+        <div class="description" id="desc-container">
+          <!-- .entityDescription and .entityCommentary rendered by JS -->
+        </div>
+      </div>
+
+      <div class="field-group">
+        <span class="a-declarative" data-action="add-description-action"
+              data-add-description-action='{"type":"AUTHOR"}'>
+          Add/Edit Description
+        </span>
+      </div>
+
+      <div class="field-group" id="doneSwitch" class="a-switch-row">
+        <span class="field-label">Reviewed:</span>
+        <input type="checkbox" name="doneSwitch" id="done-checkbox" class="a-declarative a-switch-input" />
+        <label class="a-switch-label" for="done-checkbox">Mark as reviewed</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DESCRIPTION MODAL — matches Bootstrap .modal structure ========== -->
+  <div class="modal-overlay" id="modal-backdrop">
+    <div class="modal descriptionDialog" id="humanDescriptionDialog" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-header">Custom Description</div>
+      <div class="modal-body">
+        <label>Description (max 1175 chars):</label>
+        <textarea rows="5" id="desc-textarea"></textarea>
+        <label>Commentary:</label>
+        <textarea rows="3" id="commentary-textarea"></textarea>
+        <div style="margin-top:10px">
+          <!-- Submit button with .a-button wrapper and disabled state — matches real KDP -->
+          <span id="humanDescriptionButtonOuter" class="a-button a-button-disabled a-button-primary">
+            <span class="a-button-inner">
+              <input id="humanDescriptionButton" name="humanDescriptionButton" disabled class="a-button-input" type="submit" value="Use custom description" />
+            </span>
+          </span>
+          <button onclick="closeDescDialog()" style="margin-left:8px;background:#ccc;border:none;padding:8px 16px;border-radius:4px;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== NEW ENTITY MODAL — matches KDP #newEntityDialog ========== -->
+  <div class="modal-overlay" id="new-entity-backdrop">
+    <div class="modal" id="newEntityDialog" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-header">New Character or Term</div>
+      <div class="modal-body">
+        <label>Name:</label>
+        <input type="text" id="entityName" class="form-control required" placeholder="Enter entity name" style="width:100%;padding:8px;margin:4px 0 10px;border:1px solid #ccc;border-radius:4px;" />
+        <label>Type:</label>
+        <div id="entityType" class="btn-group" style="margin:8px 0">
+          <span class="a-button a-button-selected"><span class="a-button-inner"><button name="CHARACTER" data-value="CHARACTER" class="a-button-text" type="button" style="padding:6px 12px;border:1px solid #ddd;border-radius:3px;cursor:pointer;margin-right:8px">Character</button></span></span>
+          <span class="a-button"><span class="a-button-inner"><button name="TOPIC" data-value="TOPIC" class="a-button-text" type="button" style="padding:6px 12px;border:1px solid #ddd;border-radius:3px;cursor:pointer">Term</button></span></span>
+        </div>
+        <div style="margin-top:10px">
+          <span id="createNewEntityButton" class="a-button a-button-disabled a-button-primary">
+            <span class="a-button-inner">
+              <input class="a-button-input" type="submit" value="Create" disabled />
+            </span>
+          </span>
+          <button onclick="closeNewEntityDialog()" style="margin-left:8px;background:#ccc;border:none;padding:8px 16px;border-radius:4px;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== MOCK DATA ==========
+    const mockEntities = [
+      { name: 'Kyle Chen', type: 'CHARACTER', status: 'Needs Review', description: 'A software engineer who discovers a hidden world.', commentary: '', aliases: ['Kyle', 'Mr. Chen'], included: true, reviewed: false },
+      { name: 'Sarah Lin', type: 'CHARACTER', status: 'Needs Review', description: 'Kyle\'s partner and a quantum physicist.', commentary: '', aliases: ['Sarah', 'Dr. Lin'], included: true, reviewed: false },
+      { name: 'The Shadow King', type: 'CHARACTER', status: 'Approved', description: 'The main antagonist ruling the dark realm.', commentary: 'Primary villain', aliases: ['Shadow King', 'Dark Lord'], included: true, reviewed: true },
+      { name: 'Professor Zhang', type: 'CHARACTER', status: 'Needs Review', description: '', commentary: '', aliases: ['Prof. Zhang'], included: true, reviewed: false },
+      { name: 'Nexus Portal', type: 'TOPIC', status: 'Needs Review', description: 'A gateway between dimensions.', commentary: '', aliases: ['The Portal', 'Nexus'], included: true, reviewed: false },
+      { name: 'Shadowlands', type: 'TOPIC', status: 'Needs Review', description: 'A dark parallel dimension.', commentary: '', aliases: ['Shadow Realm'], included: true, reviewed: false },
+      { name: 'Crystal Sword', type: 'TOPIC', status: 'Approved', description: 'An ancient weapon of great power.', commentary: '', aliases: ['The Sword'], included: true, reviewed: true },
+      { name: 'Minor Character Bob', type: 'CHARACTER', status: 'Needs Review', description: '', commentary: '', aliases: [], included: true, reviewed: false },
+    ];
+
+    let selectedIndex = -1;
+    // Expose for test access
+    window._selectedIndex = () => selectedIndex;
+
+    // ========== RENDER ENTITY LIST ==========
+    function renderEntityList() {
+      const list = document.getElementById('entity-list');
+      list.innerHTML = '';
+      mockEntities.forEach((entity, i) => {
+        const div = document.createElement('div');
+        div.className = 'entity well' + (i === selectedIndex ? ' selected' : '');
+        div.setAttribute('data-index', i);
+        div.innerHTML = `<div class="displayname" data-label="${entity.name}">${entity.name}</div><div class="entity-status">${entity.status}</div>`;
+        div.addEventListener('click', () => selectEntity(i));
+        list.appendChild(div);
+      });
+    }
+
+    // ========== SELECT ENTITY ==========
+    function selectEntity(index) {
+      selectedIndex = index;
+      const entity = mockEntities[index];
+
+      // Update sidebar selection
+      document.querySelectorAll('.entity.well').forEach((el, i) => {
+        el.classList.toggle('selected', i === index);
+      });
+
+      // Update detail panel
+      document.getElementById('detail-label').textContent = entity.name;
+      document.getElementById('radio-char').checked = entity.type === 'CHARACTER';
+      document.getElementById('radio-topic').checked = entity.type === 'TOPIC';
+      document.getElementById('radio-include').checked = entity.included;
+      document.getElementById('radio-exclude').checked = !entity.included;
+      // Description — KDP renders .entityDescription div via JS
+      const descContainer = document.getElementById('desc-container');
+      descContainer.innerHTML = '';
+      if (entity.description) {
+        const descDiv = document.createElement('div');
+        descDiv.className = 'entityDescription';
+        descDiv.textContent = entity.description;
+        descContainer.appendChild(descDiv);
+        if (entity.commentary) {
+          const commDiv = document.createElement('div');
+          commDiv.className = 'entityCommentary';
+          commDiv.textContent = entity.commentary;
+          descContainer.appendChild(commDiv);
+        }
+      }
+
+      document.getElementById('done-checkbox').checked = entity.reviewed;
+
+      // Update done switch label
+      const label = document.querySelector('.a-switch-label');
+      label.classList.toggle('checked', entity.reviewed);
+
+      // Render aliases — KDP detail panel: table with tr.alias rows
+      const aliasTable = document.getElementById('alias-table');
+      // Clear existing alias rows (keep header)
+      while (aliasTable.rows.length > 1) aliasTable.deleteRow(1);
+      (entity.aliases || []).forEach((alias, ai) => {
+        const isDisplay = (ai === 0); // First alias is display name
+        const occ = 100 - ai * 30;   // Mock occurrence counts
+
+        const tr = document.createElement('tr');
+        tr.className = isDisplay ? 'alias display' : 'alias';
+        tr.setAttribute('data-entityindex', index);
+        tr.setAttribute('data-alias', alias);
+
+        const tdName = document.createElement('td');
+        tdName.className = 'a-align-center';
+        tdName.textContent = alias;
+
+        const tdOcc = document.createElement('td');
+        tdOcc.className = 'a-align-center';
+        tdOcc.innerHTML = '<a class="a-link-normal count" href="#">' + occ + '</a>';
+
+        const tdDisplay = document.createElement('td');
+        tdDisplay.className = 'a-align-center';
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'displayName';
+        radio.className = 'action make-display';
+        if (isDisplay) radio.checked = true;
+        tdDisplay.appendChild(radio);
+
+        const tdRemove = document.createElement('td');
+        tdRemove.className = 'a-align-center';
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'a-declarative';
+        removeBtn.setAttribute('data-action', 'remove-alias-action');
+        removeBtn.setAttribute('data-remove-alias-action', JSON.stringify({ entityindex: String(index), alias: alias }));
+        removeBtn.innerHTML = '<span class="a-button a-button-base removeButton"><span class="a-button-inner"><input class="a-button-input" type="submit"><span class="a-button-text">Remove</span></span></span>';
+        tdRemove.appendChild(removeBtn);
+
+        tr.appendChild(tdName);
+        tr.appendChild(tdOcc);
+        tr.appendChild(tdDisplay);
+        tr.appendChild(tdRemove);
+        aliasTable.appendChild(tr);
+      });
+    }
+
+    // ========== MOCK: Listen for radio/checkbox changes to update data ==========
+    document.getElementById('radio-char').addEventListener('change', function() {
+      if (selectedIndex >= 0 && this.checked) mockEntities[selectedIndex].type = 'CHARACTER';
+    });
+    document.getElementById('radio-topic').addEventListener('change', function() {
+      if (selectedIndex >= 0 && this.checked) mockEntities[selectedIndex].type = 'TOPIC';
+    });
+    document.getElementById('radio-include').addEventListener('change', function() {
+      if (selectedIndex >= 0 && this.checked) mockEntities[selectedIndex].included = true;
+    });
+    document.getElementById('radio-exclude').addEventListener('change', function() {
+      if (selectedIndex >= 0 && this.checked) mockEntities[selectedIndex].included = false;
+    });
+    document.getElementById('done-checkbox').addEventListener('change', function() {
+      if (selectedIndex >= 0) {
+        mockEntities[selectedIndex].reviewed = this.checked;
+        mockEntities[selectedIndex].status = this.checked ? 'Approved' : 'Needs Review';
+        document.querySelector('.a-switch-label').classList.toggle('checked', this.checked);
+        renderEntityList();
+      }
+    });
+
+    // ========== DESCRIPTION DIALOG ==========
+    document.querySelector('[data-action="add-description-action"]').addEventListener('click', () => {
+      const backdrop = document.getElementById('modal-backdrop');
+      const dialog = document.getElementById('humanDescriptionDialog');
+      backdrop.classList.add('in');
+      backdrop.style.display = 'block';
+      dialog.classList.add('in');
+      if (selectedIndex >= 0) {
+        document.getElementById('desc-textarea').value = mockEntities[selectedIndex].description;
+        document.getElementById('commentary-textarea').value = mockEntities[selectedIndex].commentary;
+      }
+      // Enable submit button when textarea has content (simulates KDP behavior)
+      const submitBtn = document.getElementById('humanDescriptionButton');
+      submitBtn.removeAttribute('disabled');
+      document.getElementById('humanDescriptionButtonOuter').classList.remove('a-button-disabled');
+    });
+
+    document.getElementById('humanDescriptionButton').addEventListener('click', () => {
+      if (selectedIndex >= 0) {
+        mockEntities[selectedIndex].description = document.getElementById('desc-textarea').value;
+        mockEntities[selectedIndex].commentary = document.getElementById('commentary-textarea').value;
+        // Re-render description area with .entityDescription/.entityCommentary classes
+        const descContainer = document.getElementById('desc-container');
+        descContainer.innerHTML = '';
+        if (mockEntities[selectedIndex].description) {
+          const descDiv = document.createElement('div');
+          descDiv.className = 'entityDescription';
+          descDiv.textContent = mockEntities[selectedIndex].description;
+          descContainer.appendChild(descDiv);
+          if (mockEntities[selectedIndex].commentary) {
+            const commDiv = document.createElement('div');
+            commDiv.className = 'entityCommentary';
+            commDiv.textContent = mockEntities[selectedIndex].commentary;
+            descContainer.appendChild(commDiv);
+          }
+        }
+      }
+      closeDescDialog();
+    });
+
+    function closeDescDialog() {
+      const backdrop = document.getElementById('modal-backdrop');
+      const dialog = document.getElementById('humanDescriptionDialog');
+      backdrop.classList.remove('in');
+      backdrop.style.display = 'none';
+      dialog.classList.remove('in');
+      // Re-disable submit button
+      document.getElementById('humanDescriptionButton').setAttribute('disabled', '');
+      document.getElementById('humanDescriptionButtonOuter').classList.add('a-button-disabled');
+    }
+
+    // ========== NEW ENTITY DIALOG ==========
+    document.querySelector('#newEntityButton a').addEventListener('click', (e) => {
+      e.preventDefault();
+      const backdrop = document.getElementById('new-entity-backdrop');
+      const dialog = document.getElementById('newEntityDialog');
+      backdrop.classList.add('in');
+      backdrop.style.display = 'flex';
+      dialog.classList.add('in');
+      document.getElementById('entityName').value = '';
+      _newEntityType = 'CHARACTER';
+      // Highlight default type button
+      document.querySelectorAll('#entityType button').forEach(btn => {
+        const parentSpan = btn.closest('.a-button');
+        if (parentSpan) parentSpan.classList.toggle('a-button-selected', btn.getAttribute('name') === 'CHARACTER');
+      });
+    });
+
+    let _newEntityType = 'CHARACTER';
+    document.querySelectorAll('#entityType button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _newEntityType = btn.getAttribute('name');
+        document.querySelectorAll('#entityType button').forEach(b => {
+          const parentSpan = b.closest('.a-button');
+          if (parentSpan) parentSpan.classList.toggle('a-button-selected', b.getAttribute('name') === _newEntityType);
+        });
+      });
+    });
+
+    // Enable submit when name is entered
+    document.getElementById('entityName').addEventListener('input', function() {
+      const submitBtn = document.querySelector('#createNewEntityButton input');
+      const outer = document.getElementById('createNewEntityButton');
+      if (this.value.trim()) {
+        submitBtn.removeAttribute('disabled');
+        outer.classList.remove('a-button-disabled');
+      } else {
+        submitBtn.setAttribute('disabled', '');
+        outer.classList.add('a-button-disabled');
+      }
+    });
+
+    document.querySelector('#createNewEntityButton input').addEventListener('click', () => {
+      const name = document.getElementById('entityName').value.trim();
+      if (!name) return;
+      // Add new entity to mockEntities
+      const newEntity = {
+        name: name,
+        type: _newEntityType === 'TOPIC' ? 'TOPIC' : 'CHARACTER',
+        status: 'Needs Review',
+        description: '',
+        commentary: '',
+        aliases: [name],
+        included: true,
+        reviewed: false,
+      };
+      mockEntities.push(newEntity);
+      renderEntityList();
+      closeNewEntityDialog();
+      // Auto-select the new entity
+      selectEntity(mockEntities.length - 1);
+    });
+
+    function closeNewEntityDialog() {
+      const backdrop = document.getElementById('new-entity-backdrop');
+      const dialog = document.getElementById('newEntityDialog');
+      backdrop.classList.remove('in');
+      backdrop.style.display = 'none';
+      dialog.classList.remove('in');
+    }
+
+    // ========== EXPOSE DATA FOR TESTING ==========
+    window._mockEntities = mockEntities;
+    window._getEntityState = () => mockEntities.map(e => ({...e}));
+
+    // ========== INIT ==========
+    renderEntityList();
+    selectEntity(0);
+
+    console.log('[Mock KDP] Page loaded with', mockEntities.length, 'entities');
+  </script>
+</body>
+</html>

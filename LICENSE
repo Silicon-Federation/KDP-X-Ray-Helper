@@ -1,0 +1,85 @@
+KDP X-Ray Helper — Dual License
+
+Copyright (c) 2026 Zhang Cheng
+All rights reserved.
+
+
+================================================================================
+OPEN SOURCE LICENSE (AGPL-3.0)
+================================================================================
+
+This software is licensed under the GNU Affero General Public License v3.0
+(AGPL-3.0) with the Additional Terms described below.
+
+The full text of the AGPL-3.0 is available at:
+https://www.gnu.org/licenses/agpl-3.0.html
+
+Under the AGPL-3.0, you are free to use, modify, and distribute this software,
+provided that:
+
+  1. Any modified version or derivative work MUST also be licensed under
+     AGPL-3.0 and its complete source code MUST be made publicly available.
+
+  2. If you run a modified version on a server and let users interact with it,
+     you MUST make the source code available to those users (network copyleft).
+
+  3. You MUST retain all copyright notices and attribution to the original
+     project (KDP X-Ray Helper by Zhang Cheng) in all copies, modified versions,
+     and derivative works. This attribution must be visible to end users.
+
+
+================================================================================
+ADDITIONAL TERMS — COMMERCIAL USE RESTRICTION
+================================================================================
+
+In addition to the AGPL-3.0 terms, the following Additional Terms apply
+pursuant to Section 7 of the AGPL-3.0:
+
+  a) INDIVIDUAL AUTHORS: Individual authors and self-publishers may use this
+     software free of charge for their personal publishing activities.
+
+  b) NON-PROFIT ORGANIZATIONS: Registered non-profit organizations may use
+     this software free of charge.
+
+  c) COMMERCIAL ORGANIZATIONS: Any for-profit company, corporation, or
+     commercial entity wishing to use this software (including internal use,
+     integration into paid products or services, or any use in connection with
+     revenue-generating activities) MUST obtain a separate Commercial License.
+
+  d) REDISTRIBUTION RESTRICTION: No person or entity may sell this software
+     or any derivative work, offer it as a paid service, or bundle it with
+     paid products without a Commercial License.
+
+  e) CONTRIBUTION REQUIREMENT: Derivative works and forks intended for public
+     distribution SHOULD be contributed back to the original repository via
+     pull requests. See CONTRIBUTING.md for details.
+
+
+================================================================================
+COMMERCIAL LICENSE
+================================================================================
+
+For commercial licensing inquiries, contact:
+
+  Zhang Cheng
+  Email: zhangcheng2050@gmail.com
+
+See COMMERCIAL-LICENSE.md for terms and pricing.
+
+
+================================================================================
+DISCLAIMER
+================================================================================
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+This software automates interactions with Amazon KDP's X-Ray verification page.
+It is not affiliated with, endorsed by, or sponsored by Amazon. Use at your own
+risk. The authors are not responsible for any consequences arising from the use
+of this software on the Amazon KDP platform.

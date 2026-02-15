@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Old version backup
+_old_v1/
+
+# Spec workflow (dev only)
+.spec-workflow/
+
+# Real KDP pages (contain personal data)
+tests/real-page/
+
+# Debug logs
+*.log
+firebase-debug.log
+
+# Packed extension
+*.crx
+*.pem
+*.zip

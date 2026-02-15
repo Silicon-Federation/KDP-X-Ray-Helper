@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KDP X-Ray Helper — Test Suite</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'SF Mono', Monaco, 'Consolas', monospace; font-size: 14px; background: #1e1e1e; color: #d4d4d4; padding: 30px; max-width: 600px; margin: 0 auto; }
+    h1 { color: #ff9900; font-size: 22px; margin-bottom: 20px; }
+    .card { background: #2d2d2d; border: 1px solid #444; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; }
+    .card h2 { color: #569cd6; font-size: 16px; margin-bottom: 6px; }
+    .card p { color: #999; font-size: 12px; margin-bottom: 10px; }
+    a { color: #ff9900; text-decoration: none; font-weight: bold; }
+    a:hover { text-decoration: underline; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px; }
+    .badge-unit { background: #1e3a1e; color: #4ec9b0; }
+    .badge-int { background: #1e2a3a; color: #569cd6; }
+  </style>
+</head>
+<body>
+  <h1>KDP X-Ray Helper — Test Suite</h1>
+
+  <div class="card">
+    <h2><a href="test-runner.html">Unit Tests</a> <span class="badge badge-unit">50+ tests</span></h2>
+    <p>Tests pure logic modules: constants, i18n, Levenshtein distance, similarity scoring, partial match, alias matching, diff engine, type normalization, edge cases.</p>
+  </div>
+
+  <div class="card">
+    <h2><a href="test-integration.html">Integration Tests</a> <span class="badge badge-int">40+ tests</span></h2>
+    <p>Tests DOM operations against a mock KDP page: entity reading, navigation, type changes, include/exclude, description dialog, review toggle, batch workflow, diff+DOM integration, CSS selector compatibility.</p>
+  </div>
+
+  <div class="card">
+    <h2><a href="mock-kdp-page.html">Mock KDP Page</a></h2>
+    <p>Standalone mock of the KDP X-Ray verify page with 8 entities, interactive sidebar, detail panel, and description dialog. Used by integration tests.</p>
+  </div>
+</body>
+</html>

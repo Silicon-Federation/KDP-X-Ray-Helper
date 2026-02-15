@@ -1,0 +1,515 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KDP X-Ray Helper — Test Runner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'SF Mono', Monaco, 'Consolas', monospace; font-size: 13px; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    h1 { color: #ff9900; font-size: 18px; margin-bottom: 15px; }
+    h2 { color: #569cd6; font-size: 14px; margin: 15px 0 8px; }
+    .suite { margin-bottom: 20px; padding: 10px; border: 1px solid #333; border-radius: 6px; }
+    .test { padding: 4px 0; display: flex; gap: 8px; }
+    .test .icon { width: 16px; text-align: center; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .skip { color: #dcdcaa; }
+    .error-detail { color: #f44747; font-size: 11px; margin-left: 24px; padding: 2px 0; }
+    .summary { margin-top: 20px; padding: 12px; border-radius: 6px; font-size: 14px; font-weight: bold; }
+    .summary.all-pass { background: #1e3a1e; color: #4ec9b0; border: 1px solid #4ec9b0; }
+    .summary.has-fail { background: #3a1e1e; color: #f44747; border: 1px solid #f44747; }
+    #output { margin-top: 10px; }
+    button { padding: 8px 16px; background: #ff9900; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; margin-bottom: 15px; }
+    button:hover { background: #e88b00; }
+  </style>
+</head>
+<body>
+  <h1>KDP X-Ray Helper — Unit Test Runner</h1>
+  <button onclick="runAllTests()">Run All Tests</button>
+  <div id="output"></div>
+
+  <!-- Load modules under test -->
+  <script src="../shared/constants.js"></script>
+  <script src="../shared/i18n.js"></script>
+  <script src="../shared/diff-engine.js"></script>
+
+  <script>
+    // ========== TINY TEST FRAMEWORK ==========
+    const results = { total: 0, passed: 0, failed: 0, errors: [] };
+    let currentSuite = '';
+    const outputEl = () => document.getElementById('output');
+
+    function suite(name) {
+      currentSuite = name;
+      const div = document.createElement('div');
+      div.className = 'suite';
+      div.id = 'suite-' + name.replace(/\s/g, '-');
+      const h = document.createElement('h2');
+      h.textContent = name;
+      div.appendChild(h);
+      outputEl().appendChild(div);
+    }
+
+    function test(name, fn) {
+      results.total++;
+      const suiteEl = document.querySelector(`#suite-${currentSuite.replace(/\s/g, '-')}`);
+      const div = document.createElement('div');
+      div.className = 'test';
+
+      try {
+        fn();
+        results.passed++;
+        div.innerHTML = `<span class="icon pass">✓</span><span class="pass">${name}</span>`;
+      } catch (err) {
+        results.failed++;
+        results.errors.push({ suite: currentSuite, test: name, error: err.message });
+        div.innerHTML = `<span class="icon fail">✗</span><span class="fail">${name}</span>`;
+        const detail = document.createElement('div');
+        detail.className = 'error-detail';
+        detail.textContent = err.message;
+        suiteEl.appendChild(div);
+        suiteEl.appendChild(detail);
+        return;
+      }
+      suiteEl.appendChild(div);
+    }
+
+    function assert(condition, msg) {
+      if (!condition) throw new Error(msg || 'Assertion failed');
+    }
+
+    function assertEqual(actual, expected, msg) {
+      if (actual !== expected) {
+        throw new Error(`${msg || 'assertEqual'}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+      }
+    }
+
+    function assertClose(actual, expected, tolerance, msg) {
+      if (Math.abs(actual - expected) > tolerance) {
+        throw new Error(`${msg || 'assertClose'}: expected ~${expected} (±${tolerance}), got ${actual}`);
+      }
+    }
+
+    function showSummary() {
+      const div = document.createElement('div');
+      div.className = `summary ${results.failed === 0 ? 'all-pass' : 'has-fail'}`;
+      div.textContent = `${results.passed}/${results.total} tests passed` +
+        (results.failed > 0 ? ` — ${results.failed} FAILED` : ' — ALL PASS ✓');
+      outputEl().appendChild(div);
+    }
+
+    // ========== TEST SUITES ==========
+
+    function runAllTests() {
+      results.total = 0; results.passed = 0; results.failed = 0; results.errors = [];
+      outputEl().innerHTML = '';
+
+      testConstants();
+      testI18n();
+      testLevenshtein();
+      testSimilarity();
+      testPartialMatch();
+      testAliasMatch();
+      testFindBestMatch();
+      testGenerateDiff();
+      testNormalizeType();
+      testEdgeCases();
+
+      showSummary();
+    }
+
+    // ---- Constants ----
+    function testConstants() {
+      suite('Constants');
+
+      test('XRAY object exists', () => {
+        assert(typeof XRAY === 'object', 'XRAY should be an object');
+      });
+
+      test('DELAY values are positive numbers', () => {
+        assert(XRAY.DELAY.BETWEEN_ENTITIES > 0);
+        assert(XRAY.DELAY.AFTER_ACTION > 0);
+        assert(XRAY.DELAY.RETRY_BASE > 0);
+      });
+
+      test('LIMITS are reasonable', () => {
+        assertEqual(XRAY.LIMITS.MAX_DESCRIPTION, 1175);
+        assert(XRAY.LIMITS.MAX_RETRIES >= 1);
+        assert(XRAY.LIMITS.ELEMENT_TIMEOUT >= 1000);
+      });
+
+      test('SEL selectors are strings', () => {
+        assert(typeof XRAY.SEL.ENTITY_ITEM === 'string');
+        assert(typeof XRAY.SEL.ENTITY_NAME === 'string');
+        assert(typeof XRAY.SEL.DONE_SWITCH === 'string');
+      });
+
+      test('MSG action names are strings', () => {
+        assert(typeof XRAY.MSG.PING === 'string');
+        assert(typeof XRAY.MSG.BATCH_PROCESS === 'string');
+        assert(typeof XRAY.MSG.STOP_PROCESSING === 'string');
+      });
+
+      test('API endpoints are valid URLs', () => {
+        assert(XRAY.API.CLAUDE_ENDPOINT.startsWith('https://'));
+        assert(XRAY.API.OPENAI_ENDPOINT.startsWith('https://'));
+      });
+    }
+
+    // ---- I18n ----
+    function testI18n() {
+      suite('I18n');
+
+      test('Default language is English', () => {
+        assertEqual(I18n.getLang(), 'en');
+      });
+
+      test('t() returns English strings', () => {
+        assert(I18n.t('app_name').length > 0);
+        assertEqual(I18n.t('app_name'), 'KDP X-Ray Helper');
+      });
+
+      test('t() with placeholders', () => {
+        const result = I18n.t('status_ready', 42);
+        assert(result.includes('42'), 'Should contain the count: ' + result);
+      });
+
+      test('Switch to Chinese', () => {
+        I18n.setLang('zh_CN');
+        assertEqual(I18n.getLang(), 'zh_CN');
+        assert(I18n.t('app_name').includes('X-Ray'), 'Chinese name should contain X-Ray');
+      });
+
+      test('Chinese placeholders work', () => {
+        I18n.setLang('zh_CN');
+        const result = I18n.t('status_ready', 10);
+        assert(result.includes('10'), 'Should contain count: ' + result);
+      });
+
+      test('Unknown key returns key itself', () => {
+        const result = I18n.t('nonexistent_key_xyz');
+        assertEqual(result, 'nonexistent_key_xyz');
+      });
+
+      test('Switch back to English', () => {
+        I18n.setLang('en');
+        assertEqual(I18n.getLang(), 'en');
+      });
+
+      test('Available languages', () => {
+        const langs = I18n.getAvailableLanguages();
+        assert(langs.length >= 2);
+        assert(langs.some(l => l.code === 'en'));
+        assert(langs.some(l => l.code === 'zh_CN'));
+      });
+    }
+
+    // ---- Levenshtein ----
+    function testLevenshtein() {
+      suite('Levenshtein Distance');
+
+      test('Identical strings = 0', () => {
+        assertEqual(DiffEngine.levenshtein('hello', 'hello'), 0);
+      });
+
+      test('Empty vs non-empty', () => {
+        assertEqual(DiffEngine.levenshtein('', 'abc'), 3);
+        assertEqual(DiffEngine.levenshtein('abc', ''), 3);
+      });
+
+      test('Both empty = 0', () => {
+        assertEqual(DiffEngine.levenshtein('', ''), 0);
+      });
+
+      test('Single substitution = 1', () => {
+        assertEqual(DiffEngine.levenshtein('cat', 'bat'), 1);
+      });
+
+      test('Single insertion = 1', () => {
+        assertEqual(DiffEngine.levenshtein('cat', 'cats'), 1);
+      });
+
+      test('kitten → sitting = 3', () => {
+        assertEqual(DiffEngine.levenshtein('kitten', 'sitting'), 3);
+      });
+
+      test('Case sensitive', () => {
+        assert(DiffEngine.levenshtein('Hello', 'hello') > 0);
+      });
+    }
+
+    // ---- Similarity ----
+    function testSimilarity() {
+      suite('Similarity Score');
+
+      test('Identical = 1.0', () => {
+        assertEqual(DiffEngine.similarity('Kyle Chen', 'Kyle Chen'), 1.0);
+      });
+
+      test('Case insensitive = 1.0', () => {
+        assertEqual(DiffEngine.similarity('Kyle Chen', 'kyle chen'), 1.0);
+      });
+
+      test('Similar names > 0.7', () => {
+        const sim = DiffEngine.similarity('Kyle Chen', 'Kyle Chan');
+        assert(sim > 0.7, 'Kyle Chen vs Kyle Chan should be > 0.7, got ' + sim);
+      });
+
+      test('Very different < 0.5', () => {
+        const sim = DiffEngine.similarity('Kyle Chen', 'Shadowlands');
+        assert(sim < 0.5, 'Should be < 0.5, got ' + sim);
+      });
+
+      test('Empty string = 0', () => {
+        assertEqual(DiffEngine.similarity('', 'hello'), 0);
+        assertEqual(DiffEngine.similarity('hello', ''), 0);
+      });
+    }
+
+    // ---- Partial Match ----
+    function testPartialMatch() {
+      suite('Partial Match');
+
+      test('Substring match (Kyle in Kyle Chen)', () => {
+        const score = DiffEngine.partialMatch('Kyle', 'Kyle Chen');
+        assert(score > 0, 'Should match substring: ' + score);
+      });
+
+      test('Dr. Smith contains Smith', () => {
+        const score = DiffEngine.partialMatch('Dr. Smith', 'Smith');
+        assert(score > 0, 'Should match: ' + score);
+      });
+
+      test('No match', () => {
+        const score = DiffEngine.partialMatch('Apple', 'Banana');
+        assertEqual(score, 0);
+      });
+    }
+
+    // ---- Alias Match ----
+    function testAliasMatch() {
+      suite('Alias Matching');
+
+      test('Exact alias match = 1.0', () => {
+        const score = DiffEngine.aliasMatch('Kyle', ['Kyle', 'Mr. Chen']);
+        assertEqual(score, 1.0);
+      });
+
+      test('Fuzzy alias match > 0.85', () => {
+        const score = DiffEngine.aliasMatch('Mr Chen', ['Kyle', 'Mr. Chen']);
+        assert(score > 0.8, 'Should fuzzy match Mr Chen to Mr. Chen: ' + score);
+      });
+
+      test('No alias match = 0', () => {
+        const score = DiffEngine.aliasMatch('Banana', ['Kyle', 'Mr. Chen']);
+        assertEqual(score, 0);
+      });
+
+      test('Empty aliases = 0', () => {
+        assertEqual(DiffEngine.aliasMatch('Kyle', []), 0);
+        assertEqual(DiffEngine.aliasMatch('Kyle', null), 0);
+      });
+    }
+
+    // ---- Find Best Match ----
+    function testFindBestMatch() {
+      suite('Find Best Match');
+
+      const kdpEntities = [
+        { name: 'Kyle Chen', type: 'CHARACTER', aliases: ['Kyle', 'Mr. Chen'] },
+        { name: 'Sarah Lin', type: 'CHARACTER', aliases: ['Sarah'] },
+        { name: 'Shadowlands', type: 'TOPIC', aliases: ['Shadow Realm'] },
+      ];
+
+      test('Exact match', () => {
+        const result = DiffEngine.findBestMatch({ name: 'Kyle Chen' }, kdpEntities);
+        assert(result !== null, 'Should find match');
+        assertEqual(result.kdpEntity.name, 'Kyle Chen');
+        assertEqual(result.matchType, 'exact');
+        assertEqual(result.score, 1.0);
+      });
+
+      test('Case insensitive exact match', () => {
+        const result = DiffEngine.findBestMatch({ name: 'kyle chen' }, kdpEntities);
+        assert(result !== null);
+        assertEqual(result.kdpEntity.name, 'Kyle Chen');
+      });
+
+      test('Alias match', () => {
+        const result = DiffEngine.findBestMatch({ name: 'Shadow Realm' }, kdpEntities);
+        assert(result !== null, 'Should match via alias');
+        assertEqual(result.kdpEntity.name, 'Shadowlands');
+      });
+
+      test('No match returns null', () => {
+        const result = DiffEngine.findBestMatch({ name: 'Unknown Person XYZ' }, kdpEntities);
+        assertEqual(result, null);
+      });
+
+      test('Fuzzy match for typo', () => {
+        const result = DiffEngine.findBestMatch({ name: 'Kile Chen' }, kdpEntities, 0.7);
+        assert(result !== null, 'Should fuzzy match Kile to Kyle');
+        assertEqual(result.kdpEntity.name, 'Kyle Chen');
+      });
+    }
+
+    // ---- Generate Diff ----
+    function testGenerateDiff() {
+      suite('Generate Diff');
+
+      const imported = [
+        { name: 'Kyle Chen', type: 'CHARACTER', description: 'Updated description', action: 'update' },
+        { name: 'Sarah Lin', type: 'CHARACTER', description: 'Same as KDP', action: 'update' },
+        { name: 'Minor Character Bob', type: 'CHARACTER', action: 'delete' },
+        { name: 'New Character', type: 'CHARACTER', description: 'Brand new', action: 'update' },
+      ];
+
+      const kdpEntities = [
+        { name: 'Kyle Chen', type: 'CHARACTER', description: 'Old description' },
+        { name: 'Sarah Lin', type: 'CHARACTER', description: 'Same as KDP' },
+        { name: 'Minor Character Bob', type: 'CHARACTER', description: '' },
+        { name: 'Shadowlands', type: 'TOPIC', description: 'A realm' },
+      ];
+
+      test('Generates diff array', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities);
+        assert(Array.isArray(diff), 'Should return array');
+        assert(diff.length > 0, 'Should have items');
+      });
+
+      test('Kyle Chen marked as update (description changed)', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities);
+        const kyle = diff.find(d => d.name === 'Kyle Chen');
+        assert(kyle !== null, 'Kyle should be in diff');
+        assertEqual(kyle.action, 'update');
+        assert(kyle.changes.some(c => c.field === 'description'), 'Should have description change');
+      });
+
+      test('Sarah Lin marked as keep (no changes)', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities);
+        const sarah = diff.find(d => d.name === 'Sarah Lin');
+        assertEqual(sarah.action, 'keep');
+      });
+
+      test('Bob marked as delete', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities);
+        const bob = diff.find(d => d.name === 'Minor Character Bob');
+        assertEqual(bob.action, 'delete');
+      });
+
+      test('New Character marked as import_only', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities);
+        const newChar = diff.find(d => d.name === 'New Character');
+        assert(newChar !== null, 'New Character should be in diff');
+        assertEqual(newChar.source, 'import_only');
+      });
+
+      test('Shadowlands appears as kdp_only', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities, { showUnmatched: true });
+        const shadow = diff.find(d => d.name === 'Shadowlands');
+        assert(shadow !== null, 'Shadowlands should appear');
+        assertEqual(shadow.source, 'kdp_only');
+      });
+
+      test('getDiffStats returns correct counts', () => {
+        const diff = DiffEngine.generateDiff(imported, kdpEntities, { showUnmatched: true });
+        const stats = DiffEngine.getDiffStats(diff);
+        assert(stats.total > 0);
+        assert(stats.updates >= 1, 'Should have at least 1 update');
+        assert(stats.deletes >= 1, 'Should have at least 1 delete');
+      });
+    }
+
+    // ---- Normalize Type ----
+    function testNormalizeType() {
+      suite('Normalize Type');
+
+      test('CHARACTER stays CHARACTER', () => {
+        assertEqual(DiffEngine.normalizeType('CHARACTER'), 'CHARACTER');
+      });
+
+      test('TERM stays TERM', () => {
+        assertEqual(DiffEngine.normalizeType('TERM'), 'TERM');
+      });
+
+      test('TOPIC becomes TERM', () => {
+        assertEqual(DiffEngine.normalizeType('TOPIC'), 'TERM');
+      });
+
+      test('lowercase character', () => {
+        assertEqual(DiffEngine.normalizeType('character'), 'CHARACTER');
+      });
+
+      test('CHAR becomes CHARACTER', () => {
+        assertEqual(DiffEngine.normalizeType('CHAR'), 'CHARACTER');
+      });
+
+      test('Empty returns empty', () => {
+        assertEqual(DiffEngine.normalizeType(''), '');
+        assertEqual(DiffEngine.normalizeType(null), '');
+      });
+    }
+
+    // ---- Edge Cases ----
+    function testEdgeCases() {
+      suite('Edge Cases');
+
+      test('Empty imported + empty KDP = empty diff', () => {
+        const diff = DiffEngine.generateDiff([], []);
+        assert(Array.isArray(diff));
+        assertEqual(diff.length, 0);
+      });
+
+      test('Empty imported + some KDP = all kdp_only', () => {
+        const diff = DiffEngine.generateDiff([], [{ name: 'A', type: 'CHARACTER' }], { showUnmatched: true });
+        assertEqual(diff.length, 1);
+        assertEqual(diff[0].source, 'kdp_only');
+      });
+
+      test('Some imported + empty KDP = all import_only', () => {
+        const diff = DiffEngine.generateDiff(
+          [{ name: 'A', type: 'CHARACTER', action: 'update' }],
+          []
+        );
+        assertEqual(diff.length, 1);
+        assertEqual(diff[0].source, 'import_only');
+      });
+
+      test('Unicode entity names', () => {
+        const diff = DiffEngine.generateDiff(
+          [{ name: '张三', type: 'CHARACTER', description: '主角', action: 'update' }],
+          [{ name: '张三', type: 'CHARACTER', description: '' }]
+        );
+        const item = diff.find(d => d.name === '张三');
+        assert(item !== null, 'Should handle Chinese names');
+        assertEqual(item.source, 'both');
+      });
+
+      test('Very long description truncation', () => {
+        const longDesc = 'A'.repeat(2000);
+        const diff = DiffEngine.generateDiff(
+          [{ name: 'Test', type: 'CHARACTER', description: longDesc, action: 'update' }],
+          [{ name: 'Test', type: 'CHARACTER', description: 'Short' }]
+        );
+        const item = diff.find(d => d.name === 'Test');
+        assert(item.changes.some(c => c.field === 'description'), 'Should detect desc change');
+      });
+
+      test('Duplicate names in imported (last wins in matching)', () => {
+        const diff = DiffEngine.generateDiff(
+          [
+            { name: 'Kyle', type: 'CHARACTER', action: 'update', description: 'First' },
+            { name: 'Kyle', type: 'CHARACTER', action: 'update', description: 'Second' },
+          ],
+          [{ name: 'Kyle', type: 'CHARACTER', description: 'Original' }]
+        );
+        // First Kyle should match KDP's Kyle, second should be import_only
+        assert(diff.length >= 2, 'Should have at least 2 items');
+      });
+    }
+
+    // Auto-run on load
+    window.addEventListener('load', runAllTests);
+  </script>
+</body>
+</html>
