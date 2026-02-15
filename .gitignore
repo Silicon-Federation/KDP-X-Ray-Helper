@@ -18,6 +18,16 @@ _old_v1/
 # Real KDP pages (contain personal data)
 tests/real-page/
 
+# Debug/dev prompt docs
+debug-*.md
+tests/prompt-*.md
+
+# Temporary/duplicate files
+tests/mock-kdp-page 2.html
+
+# Placeholder files
+icons/.keep
+
 # Debug logs
 *.log
 firebase-debug.log
