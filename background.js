@@ -22,12 +22,11 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
 // ============ MESSAGE ROUTING ============
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // --- Progress/Complete messages from content script → broadcast to side panel ---
+  // --- Progress/Complete messages from content script ---
+  // No need to re-broadcast: chrome.runtime.sendMessage from content scripts
+  // already delivers to all extension pages (side panel, options, etc.)
   if (msg.action === 'progress' || msg.action === 'batchComplete') {
-    chrome.runtime.sendMessage(msg).catch(() => {
-      // Side panel might be closed, ignore
-    });
-    return;
+    return; // just ignore, sidepanel already receives it directly
   }
 
   // --- Side panel requests to content script ---
