@@ -15,17 +15,6 @@ const SidePanel = (() => {
     // Initialize sub-modules
     BatchControls.init();
 
-    // Restore cached KDP entities from session storage (survives side panel reloads)
-    try {
-      const cached = await chrome.storage.session.get('kdpEntities');
-      if (cached.kdpEntities && cached.kdpEntities.length > 0) {
-        _kdpEntities = cached.kdpEntities;
-        console.log('[SidePanel] Restored', _kdpEntities.length, 'cached KDP entities from session storage');
-      }
-    } catch (e) {
-      // storage.session may not be available in older browsers, ignore
-    }
-
     // Bind events
     bindTabEvents();
     bindImportEvents();
@@ -38,16 +27,6 @@ const SidePanel = (() => {
 
     // Check if on KDP page
     checkConnection();
-  }
-
-  // Persist KDP entities to session storage so they survive side panel reloads
-  function cacheKdpEntities(entities) {
-    _kdpEntities = entities;
-    try {
-      chrome.storage.session.set({ kdpEntities: entities });
-    } catch (e) {
-      // ignore
-    }
   }
 
   // ============ CONNECTION CHECK ============
@@ -218,18 +197,11 @@ const SidePanel = (() => {
   function compareWithKDP() {
     if (!_importedData) return;
 
-    // If we already have detailed KDP entities (from Generate Prompt), reuse them
-    if (_kdpEntities && _kdpEntities.length > 0 && _kdpEntities[0].type != null) {
-      _diffResults = compareEntities(_importedData, _kdpEntities);
-      renderDiff(_diffResults);
-      switchToTab('diff');
-      setStatus(I18n.t('status_ready', _kdpEntities.length), 'ready');
-      return;
-    }
-
-    // Otherwise fetch fresh detailed data from KDP page
     setStatus(I18n.t('status_checking'), 'working');
 
+    // Background.js caches detailed entities automatically.
+    // If Generate Prompt already fetched them, background returns cached data instantly
+    // without re-triggering the content script to navigate all entities.
     chrome.runtime.sendMessage(
       { target: 'content', action: XRAY.MSG.GET_ENTITIES, detailed: true },
       (res) => {
@@ -238,7 +210,7 @@ const SidePanel = (() => {
           return;
         }
 
-        cacheKdpEntities(res.entities || []);
+        _kdpEntities = res.entities || [];
         _diffResults = compareEntities(_importedData, _kdpEntities);
         renderDiff(_diffResults);
         switchToTab('diff');
@@ -310,7 +282,7 @@ IMPORTANT: Please provide the result as a downloadable .json file so the user ca
           return;
         }
 
-        cacheKdpEntities(res.entities || []);
+        _kdpEntities = res.entities || [];
         const prompt = buildPrompt(_kdpEntities);
         const promptArea = document.getElementById('prompt-output');
         promptArea.value = prompt;

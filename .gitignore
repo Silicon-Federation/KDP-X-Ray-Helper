@@ -36,3 +36,9 @@ firebase-debug.log
 *.crx
 *.pem
 *.zip
+
+# Personal KDP entity data
+kdp_entities_result.json
+
+# Temp files
+ziMSL6sj
