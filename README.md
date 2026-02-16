@@ -96,6 +96,13 @@ For a typical novel with 100 entities: manual editing takes 3–5 hours (clickin
 
 ## Installation
 
+### Option A: Install from Store (recommended)
+
+- **Chrome Web Store**: [KDP X-Ray Helper](https://chrome.google.com/webstore/detail/TODO) — click "Add to Chrome"
+- **Edge Add-ons**: [KDP X-Ray Helper](https://microsoftedge.microsoft.com/addons/detail/TODO) — click "Get"
+
+### Option B: Load Unpacked (developer mode)
+
 1. Clone or download this repository
 2. Open `chrome://extensions/` (Chrome) or `edge://extensions/` (Edge)
 3. Enable **Developer mode** (top-right toggle)
